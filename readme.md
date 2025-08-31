@@ -8,36 +8,22 @@ Once deployed, the VM automatically installs **Nginx** and serves a sample "Hell
 
 ## Prerequisites
 
-1. **Install Terraform**
-   - Download: [Terraform Downloads](https://developer.hashicorp.com/terraform/downloads)
-   - Verify:
-     ```bash
-     terraform -v
-     ```
-
-2. **Install Azure CLI**
-   - Download: [Azure CLI Install](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-   - Verify:
-     ```bash
-     az version
-     ```
-
-3. **Login to Azure**
+1. **Login to Azure**
    ```bash
    az login
    ```
    This will open a browser for authentication.
 
-4. **Set correct subscription (if you have multiple)**
+2. **Set the correct subscription**
    ```bash
    az account set --subscription "<SUBSCRIPTION_ID>"
    ```
 
-5. **Generate SSH Key** (if not available)
+3. **Generate SSH Key** (if not already available)
    ```bash
    ssh-keygen -t rsa -b 4096
    ```
-   By default, key will be stored at `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`.
+   By default, the key will be stored at `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`.
 
 ---
 
@@ -45,15 +31,15 @@ Once deployed, the VM automatically installs **Nginx** and serves a sample "Hell
 
 ```
 .
-├── main.tf       # Azure resources definition (RG, VNet, Subnet, NSG, VM...)   # Azure resources definition (RG, VNet, Subnet, NSG, VM...)
-├── providers.tf 
+├── main.tf       # Azure resources definition (RG, VNet, Subnet, NSG, VM...)
+├── providers.tf  # Terraform provider configuration
 ├── variables.tf  # Input variables (location, username, ssh key...)
 ├── outputs.tf    # Output values (public IP)
 ```
 
 ---
 
-## How to Run
+## How to Deploy
 
 1. **Initialize Terraform**
    ```bash
