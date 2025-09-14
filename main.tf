@@ -6,7 +6,7 @@ resource "azurerm_resource_group" "rg" {
 
 # 2. Virtual Network (VPC): place where subnet, NIC, VM… exist inside.
 resource "azurerm_virtual_network" "vnet" {
-  name                = "vnet-hello"
+  name                = "vnet-moodle"
   address_space       = ["10.0.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
@@ -14,7 +14,7 @@ resource "azurerm_virtual_network" "vnet" {
 
 # 3. Subnet: Là phân đoạn mạng nhỏ trong VNet (10.0.1.0/24), Nếu thiếu: NIC không có chỗ để attach → VM fail.
 resource "azurerm_subnet" "subnet" {
-  name                 = "subnet-hello"
+  name                 = "subnet-moodle"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/24"]
@@ -22,7 +22,7 @@ resource "azurerm_subnet" "subnet" {
 
 # 4. Public IP: Static IP để truy cập VM từ Internet. Nếu thiếu: VM chỉ có private IP trong VNet, unable to SSH or HTTP with Internet.
 resource "azurerm_public_ip" "public_ip" {
-  name                = "hello-pip"
+  name                = "moodle-pip"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   allocation_method   = "Static"
@@ -33,7 +33,7 @@ resource "azurerm_public_ip" "public_ip" {
 
 # Association of NSG with NIC is recommended over Subnet. Nếu thiếu association: NSG tồn tại nhưng không áp dụng → mặc định sẽ block hết inbound.
 resource "azurerm_network_security_group" "nsg" {
-  name                = "hello-nsg"
+  name                = "moodle-nsg"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 }
@@ -73,7 +73,7 @@ resource "azurerm_network_interface_security_group_association" "nic_nsg" {
 
 # 6. NIC: Network Interface = card mạng cho VM. Nếu thiếu: VM không thể kết nối mạng → fail khi tạo
 resource "azurerm_network_interface" "nic" {
-  name                = "hello-nic"
+  name                = "moodle-nic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -87,7 +87,7 @@ resource "azurerm_network_interface" "nic" {
 
 # 7. VM: 
 resource "azurerm_linux_virtual_machine" "vm" {
-  name                = "hello-vm"
+  name                = "moodle-vm"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   size                = "Standard_B1s"
@@ -115,10 +115,83 @@ resource "azurerm_linux_virtual_machine" "vm" {
   custom_data = base64encode(<<EOF
 #!/bin/bash
 apt-get update -y
-apt-get install -y nginx
-echo "<h1>Hello from Azure + Terraform</h1>" > /var/www/html/index.html
-systemctl enable nginx
-systemctl start nginx
+
+# Install Docker
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io
+
+# Install Docker Compose
+curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# Start and enable Docker service
+systemctl start docker
+systemctl enable docker
+
+# Add user to docker group
+usermod -aG docker ${var.admin_username}
+
+# Install git
+apt-get install -y git
+
+# Clone the MoodleLMS repo
+cd /home/${var.admin_username}
+git clone https://github.com/layducky/MoodleLMS_App.git
+chown -R ${var.admin_username}:${var.admin_username} /home/${var.admin_username}/MoodleLMS_App
+
+# Create a simple script to start Moodle
+cat > /home/${var.admin_username}/start-moodle.sh << 'SCRIPT_EOF'
+#!/bin/bash
+cd /home/${var.admin_username}/MoodleLMS_App
+
+if [ -f "docker-compose.yml" ]; then
+    echo "Starting Moodle with Docker Compose..."
+    docker-compose up -d
+    
+    echo "Moodle is starting up..."
+    echo "Access Moodle at: http://$(curl -s ifconfig.me)"
+    echo "Checking container status..."
+    docker-compose ps
+else
+    echo "docker-compose.yml not found!"
+fi
+SCRIPT_EOF
+
+chmod +x /home/${var.admin_username}/start-moodle.sh
+chown ${var.admin_username}:${var.admin_username} /home/${var.admin_username}/start-moodle.sh
+
+# Create status check script
+cat > /home/${var.admin_username}/check-moodle.sh << 'CHECK_EOF'
+#!/bin/bash
+cd /home/${var.admin_username}/MoodleLMS_App
+echo "=== Docker Container Status ==="
+docker-compose ps
+echo ""
+echo "=== Container Logs (last 20 lines) ==="
+docker-compose logs --tail=20
+echo ""
+echo "=== System Resources ==="
+free -h
+df -h
+echo ""
+echo "=== Access URL ==="
+echo "Moodle URL: http://$(curl -s ifconfig.me)"
+CHECK_EOF
+
+chmod +x /home/${var.admin_username}/check-moodle.sh
+chown ${var.admin_username}:${var.admin_username} /home/${var.admin_username}/check-moodle.sh
+
+# Log setup completion
+echo "VM Setup completed at $(date)" >> /var/log/vm-setup.log
+
+# Auto-start Moodle after system is ready
+sleep 30
+su - ${var.admin_username} -c "/home/${var.admin_username}/start-moodle.sh" >> /var/log/moodle-startup.log 2>&1
+
+echo "Moodle startup initiated at $(date)" >> /var/log/vm-setup.log
 EOF
   )
 }
