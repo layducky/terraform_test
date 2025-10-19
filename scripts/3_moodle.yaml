@@ -1,0 +1,114 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moodle
+  namespace: moodle
+  labels:
+    app: moodle
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moodle
+  template:
+    metadata:
+      labels:
+        app: moodle
+    spec:
+      containers:
+      - name: moodle
+        image: bitnamilegacy/moodle:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MOODLE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: moodle-secrets
+              key: MOODLE_USERNAME
+        - name: MOODLE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: moodle-secrets
+              key: MOODLE_PASSWORD
+        - name: MOODLE_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: moodle-secrets
+              key: MOODLE_EMAIL
+        - name: MOODLE_SITE_NAME
+          value: "Devops HCMUT LMS"
+        - name: MOODLE_DATABASE_TYPE
+          value: "pgsql"
+        - name: MOODLE_DATABASE_HOST
+          value: "postgres"
+        - name: MOODLE_DATABASE_PORT_NUMBER
+          value: "5432"
+        - name: MOODLE_DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: moodle-secrets
+              key: MOODLE_DATABASE_USER
+        - name: MOODLE_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: moodle-secrets
+              key: MOODLE_DATABASE_PASSWORD
+        - name: MOODLE_DATABASE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: moodle-secrets
+              key: MOODLE_DATABASE_NAME
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        volumeMounts:
+        - mountPath: /bitnami/moodle
+          name: moodle-storage
+        - mountPath: /bitnami/moodledata
+          name: moodledata-storage
+        livenessProbe:
+          httpGet:
+            path: /login/index.php
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /login/index.php
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: moodle-storage
+        persistentVolumeClaim:
+          claimName: moodle-pvc
+      - name: moodledata-storage
+        persistentVolumeClaim:
+          claimName: moodledata-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moodle
+  namespace: moodle
+  labels:
+    app: moodle
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  selector:
+    app: moodle
