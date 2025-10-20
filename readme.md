@@ -1,170 +1,159 @@
-# Deploy Azure VM with Moodle LMS using Terraform
+# Deploy Moodle LMS on Azure AKS with Terraform & Helm
 
-This project uses **Terraform** and **Azure CLI** to deploy an Ubuntu Linux VM on Microsoft Azure with **Moodle LMS** automatically installed via Docker.
+## Overview
 
-The VM will be created inside a Resource Group, with Virtual Network, Subnet, Public IP, and NSG (Firewall) configured. Once deployed, the VM automatically clones the MoodleLMS_App repository and starts Moodle using Docker Compose.
-
----
+This project uses Terraform, Azure AKS, kubectl, and Helm to deploy Moodle LMS on a managed Kubernetes cluster. PostgreSQL is deployed as a container within the cluster with persistent storage via PVCs.
 
 ## Prerequisites
 
-1. **Login to Azure**
-   ```bash
-   az login
-   ```
-   This will open a browser for authentication.
+- Azure CLI
+- Terraform
+- kubectl
+- Helm
+- SSH key (for Terraform to create AKS admin)
 
-2. **Set the correct subscription**
-   ```bash
-   az account set --subscription "<SUBSCRIPTION_ID>"
-   ```
+## Quick Start
 
-3. **Generate SSH Key** (if not already available)
-   ```bash
-   ssh-keygen -t rsa -b 4096
-   ```
-   By default, the key will be stored at `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`.
+### Step 0: Azure Login
 
----
+```bash
+az login
+```
+This will open a browser for authentication.
+
+Set the correct subscription:
+```bash
+az account set --subscription "<SUBSCRIPTION_ID>"
+```
+
+Update `variables.tf` with your subscription ID and other values:
+```hcl
+variable "subscription_id" {
+  default = "YOUR_SUBSCRIPTION_ID"
+}
+```
+
+### Step 1: Deploy AKS with Terraform
+
+
+
+```bash
+terraform init
+terraform plan
+terraform apply -auto-approve
+```
+
+Terraform will output the kubeconfig needed for kubectl and Helm to connect.
+
+### Step 2: Deploy NGINX Ingress Controller
+
+```bash
+./install_ingress.sh
+```
+
+This script will:
+- Install Azure CLI, kubectl, Helm if missing
+- Get AKS credentials
+- Create ingress-nginx namespace
+- Deploy NGINX Ingress Controller via Helm
+- Wait for external IP
+
+### Step 3: Deploy Moodle & PostgreSQL
+
+```bash
+./deploy_moodle.sh
+```
+
+This script will:
+- Create moodle namespace
+- Apply Kubernetes manifests in order
 
 ## Project Structure
 
 ```
 .
-├── main.tf          # Azure resources definition (RG, VNet, Subnet, NSG, VM...)
-├── providers.tf     # Terraform provider configuration
-├── variables.tf     # Input variables (location, username, ssh key...)
-├── outputs.tf       # Output values (public IP)
-├── terraform.tfvars # Variable values (optional)
+├── terraform/
+│   ├── .terraform
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── terraform.tfvars
+├── moodle-chart/
+├── scripts/
+│   ├── 0_secret.yaml
+│   ├── 1_moodle_pvc.yaml
+│   ├── 2_psql_db.yaml
+│   ├── 3_moodle.yaml
+│   ├── 4_moodle_ingress.yaml
+│   ├── deploy_moodle.sh
+│   ├── destroy_moodle.sh
+│   └── install_ingress.sh
+├── .gitignore
+├── terraform.lock.hcl
+├── main.tf
+├── variables.tf
+├── readme.md
+├── terraform.tfstate
+└── terraform.tfstate.backup
 ```
 
----
+## Check Deployment
 
-## How to Deploy
-
-1. **Initialize Terraform**
-   ```bash
-   terraform init
-   ```
-
-2. **Preview deployment plan**
-   ```bash
-   terraform plan
-   ```
-
-3. **Apply deployment**
-   ```bash
-   terraform apply -auto-approve
-   ```
-   
-   After 3-5 minutes, Terraform will output the **Public IP Address** of the VM.
-
-4. **Wait for Moodle to start**
-   
-   The VM needs additional 2-3 minutes to:
-   - Install Docker and Docker Compose
-   - Clone the MoodleLMS_App repository
-   - Start Moodle containers
-
----
-
-## Access the VM and Moodle
-
-### SSH Access
 ```bash
-ssh azureuser@<PUBLIC_IP>
+# Check pods
+kubectl get pods -n moodle
+
+# Check services
+kubectl get svc -n moodle
+
+# Check ingress
+kubectl get ingress -n moodle
+
+# View logs
+kubectl logs -n moodle deployment/postgres
+kubectl logs -n moodle deployment/moodle
+
+# Get external IP
+kubectl get svc -n ingress-nginx
 ```
-
-### Moodle Web Access
-- Open browser: `http://<PUBLIC_IP>`
-- You should see the **Moodle LMS** login/setup page
-
-### Available Scripts on VM
-
-After SSH-ing into the VM, you can use these scripts:
-
-1. **Start/Restart Moodle**
-   ```bash
-   ./start-moodle.sh
-   ```
-
-2. **Check Moodle Status**
-   ```bash
-   ./check-moodle.sh
-   ```
-   This shows:
-   - Docker container status
-   - Container logs (last 20 lines)
-   - System resources usage
-   - Access URL
-
-3. **Manual Docker Commands**
-   ```bash
-   cd ~/MoodleLMS_App
-   
-   # View containers
-   docker-compose ps
-   
-   # View logs
-   docker-compose logs -f
-   
-   # Stop Moodle
-   docker-compose down
-   
-   # Start Moodle
-   docker-compose up -d
-   ```
-
----
 
 ## Troubleshooting
 
-### Check VM Setup Status
+### Check Logs
+
 ```bash
-ssh azureuser@<PUBLIC_IP>
-sudo tail -f /var/log/vm-setup.log
+kubectl logs -n moodle deployment/postgres
+kubectl logs -n moodle deployment/moodle
 ```
 
-### Check Moodle Startup Logs
+### Check Pod Status
+
 ```bash
-ssh azureuser@<PUBLIC_IP>
-sudo tail -f /var/log/moodle-startup.log
+kubectl get pods -n moodle
 ```
 
-### If Moodle is not accessible:
-1. Wait 5-10 minutes after VM creation
-2. Check container status: `./check-moodle.sh`
-3. Restart Moodle: `./start-moodle.sh`
-4. Check firewall rules in Azure NSG (port 80 should be open)
+### Check Ingress External IP
 
----
-
-## Cleanup
-
-When you no longer need the resources:
 ```bash
-terraform destroy -auto-approve
+kubectl get svc -n ingress-nginx
 ```
-This will delete all Azure resources created by Terraform.
 
----
+### Destroy/Restart Moodle Environment
 
-## Notes
-
-- Default region is `Southeast Asia`. You can change it in `variables.tf`.
-- Default VM size is `Standard_B1s` (free-tier eligible in some subscriptions).
-- Make sure your `~/.ssh/id_rsa.pub` file exists and matches the `ssh_public_key` variable.
-- The VM automatically clones from: `https://github.com/layducky/MoodleLMS_App.git`
-- Moodle runs directly on port 80 (no reverse proxy needed)
-- First-time Moodle setup may require additional configuration through the web interface
-
----
-
-## Architecture
-
+```bash
+./destroy_moodle.sh
+./deploy_moodle.sh (Restart)
 ```
-Internet → Azure Public IP → NSG (Firewall) → VM → Docker → Moodle LMS
-                    ↓
-              Port 80 (HTTP)
-              Port 22 (SSH)
-```
+
+## Default Credentials
+
+**Moodle Admin:**
+- Username: admin
+- Password: admin123
+
+**Access Moodle at:**
+- http://EXTERNAL_IP
+
+## Key Concepts
+
+**Namespaces:** Isolate Moodle (moodle) and Ingress (ingress-nginx) resources to prevent conflicts.
