@@ -72,29 +72,20 @@ This script will:
 
 ```
 .
-├── terraform/
-│   ├── .terraform
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars
 ├── moodle-chart/
 ├── scripts/
-│   ├── 0_secret.yaml
-│   ├── 1_moodle_pvc.yaml
-│   ├── 2_psql_db.yaml
-│   ├── 3_moodle.yaml
-│   ├── 4_moodle_ingress.yaml
-│   ├── deploy_moodle.sh
-│   ├── destroy_moodle.sh
-│   └── install_ingress.sh
+│   ├── 0_secret.yaml           # Secrets for Moodle & PostgreSQL
+│   ├── 1_moodle_pvc.yaml       # Persistent volume claims
+│   ├── 2_psql_db.yaml          # PostgreSQL deployment & service
+│   ├── 3_moodle.yaml           # Moodle deployment & service
+│   ├── 4_moodle_ingress.yaml   # Kubernetes Ingress
+│   ├── deploy_moodle.sh        # Deploy Moodle & PostgreSQL
+│   ├── destroy_moodle.sh       # Rollback Moodle deployment
+│   └── install_ingress.sh      # Deploy NGINX Ingress
 ├── .gitignore
-├── terraform.lock.hcl
-├── main.tf
-├── variables.tf
+├── main.tf                     # Resource Group & AKS cluster
+├── variables.tf                # Store variables for main.tf
 ├── readme.md
-├── terraform.tfstate
-└── terraform.tfstate.backup
 ```
 
 ## Check Deployment
@@ -114,27 +105,6 @@ kubectl logs -n moodle deployment/postgres
 kubectl logs -n moodle deployment/moodle
 
 # Get external IP
-kubectl get svc -n ingress-nginx
-```
-
-## Troubleshooting
-
-### Check Logs
-
-```bash
-kubectl logs -n moodle deployment/postgres
-kubectl logs -n moodle deployment/moodle
-```
-
-### Check Pod Status
-
-```bash
-kubectl get pods -n moodle
-```
-
-### Check Ingress External IP
-
-```bash
 kubectl get svc -n ingress-nginx
 ```
 
